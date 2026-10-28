@@ -1,0 +1,153 @@
+{% extends "layout.html" %}
+
+{% block page_title %}Gestión de Profesionales{% endblock %}
+
+{% block content %}
+<div class="grid-container">
+    <!-- Formulario para Registrar/Editar Profesional -->
+    <div class="card">
+        <h3 id="form-titulo">Registrar Profesional</h3>
+        <form id="form-profesional">
+            <input type="hidden" id="profesional_id" value="0">
+            <div class="form-group">
+                <label>Nombre y Apellido</label>
+                <input type="text" id="prof_nombre" required placeholder="Ej: Ana Martínez">
+            </div>
+            <div class="form-group">
+                <label>Especialidad</label>
+                <input type="text" id="prof_especialidad" required placeholder="Ej: Cosmiatra / Depiladora">
+            </div>
+            <div class="form-group">
+                <label>Sucursal Asignada</label>
+                <select id="prof_sucursal" required>
+                    <option value="0">🌐 Ambas Sucursales (Tunuyán y Tupungato)</option>
+                    <option value="1">📍 Tunuyán</option>
+                    <option value="2">📍 Tupungato</option>
+                </select>
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button type="submit" class="btn-primary" id="btn-guardar-prof">Guardar Profesional</button>
+                <button type="button" class="btn-secondary" id="btn-cancelar-prof" style="display:none;" onclick="resetearFormulario()">Cancelar</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Lista de Profesionales -->
+    <div class="card">
+        <h3>Profesionales Registrados</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Especialidad</th>
+                    <th>Sucursal</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-profesionales">
+                <tr><td colspan="4">Cargando equipo...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        cargarProfesionales();
+    });
+
+    async function cargarProfesionales() {
+        try {
+            const res = await fetch('/profesionales/');
+            if (res.ok) {
+                const profesionales = await res.json();
+                renderizarProfesionales(profesionales);
+            }
+        } catch (e) { console.error("Error al cargar profesionales:", e); }
+    }
+
+    function renderizarProfesionales(lista) {
+        const tbody = document.getElementById('tabla-profesionales');
+        if (!lista || lista.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4">No hay profesionales registrados aún.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = lista.map(p => {
+            let sucursalTexto = '🌐 Ambas Sucursales';
+            if (p.sucursal_id === 1) sucursalTexto = '📍 Tunuyán';
+            if (p.sucursal_id === 2) sucursalTexto = '📍 Tupungato';
+
+            return `
+                <tr>
+                    <td><b>${p.nombre}</b></td>
+                    <td>${p.especialidad}</td>
+                    <td><span class="badge-pago">${sucursalTexto}</span></td>
+                    <td>
+                        <button class="btn-secondary" onclick='editarProfesional(${JSON.stringify(p)})'>Editar</button>
+                        <button class="btn-danger" onclick="eliminarProfesional(${p.id_profesional})">Eliminar</button>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    document.getElementById('form-profesional').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const idProf = parseInt(document.getElementById('profesional_id').value);
+        const payload = {
+            nombre: document.getElementById('prof_nombre').value,
+            especialidad: document.getElementById('prof_especialidad').value,
+            sucursal_id: parseInt(document.getElementById('prof_sucursal').value)
+        };
+
+        const url = idProf === 0 ? '/profesionales/' : `/profesionales/${idProf}`;
+        const method = idProf === 0 ? 'POST' : 'PUT';
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                mostrarAlerta(idProf === 0 ? 'Profesional registrado' : 'Profesional actualizado', 'success');
+                resetearFormulario();
+                await cargarProfesionales();
+            }
+        } catch (e) { mostrarAlerta('Error al guardar profesional', 'error'); }
+    });
+
+    function editarProfesional(p) {
+        document.getElementById('profesional_id').value = p.id_profesional;
+        document.getElementById('prof_nombre').value = p.nombre;
+        document.getElementById('prof_especialidad').value = p.especialidad;
+        document.getElementById('prof_sucursal').value = p.sucursal_id;
+
+        document.getElementById('form-titulo').innerText = 'Editar Profesional';
+        document.getElementById('btn-guardar-prof').innerText = 'Actualizar Profesional';
+        document.getElementById('btn-cancelar-prof').style.display = 'inline-block';
+    }
+
+    function resetearFormulario() {
+        document.getElementById('profesional_id').value = '0';
+        document.getElementById('form-profesional').reset();
+        document.getElementById('form-titulo').innerText = 'Registrar Profesional';
+        document.getElementById('btn-guardar-prof').innerText = 'Guardar Profesional';
+        document.getElementById('btn-cancelar-prof').style.display = 'none';
+    }
+
+    async function eliminarProfesional(id) {
+        if (!confirm('¿Seguro que deseas eliminar a esta profesional?')) return;
+        try {
+            const res = await fetch(`/profesionales/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                mostrarAlerta('Profesional eliminada', 'success');
+                await cargarProfesionales();
+            }
+        } catch (e) { mostrarAlerta('Error al eliminar profesional', 'error'); }
+    }
+</script>
+{% endblock %}

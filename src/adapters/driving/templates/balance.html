@@ -1,0 +1,271 @@
+{% extends "layout.html" %}
+
+{% block page_title %}Caja y Balance Contable{% endblock %}
+
+{% block content %}
+<!-- Estilos para los botones de filtro -->
+<style>
+    .filtros-fecha {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    .btn-filter {
+        padding: 8px 16px;
+        border: 1px solid #3d2c38;
+        background: #fff;
+        color: #3d2c38;
+        border-radius: 20px;
+        cursor: pointer;
+        font-weight: 500;
+        transition: all 0.2s ease;
+    }
+    .btn-filter.active, .btn-filter:hover {
+        background: #3d2c38;
+        color: #fff;
+    }
+</style>
+
+<div class="grid-container" style="grid-template-columns: 1fr 2fr; gap: 20px;">
+    <!-- Formulario para Registrar Gastos y Sueldos -->
+    <div class="card">
+        <h3>Registrar Gasto / Sueldo</h3>
+        <form id="form-gasto">
+            <div class="form-group">
+                <label>Concepto / Detalle</label>
+                <input type="text" id="gasto_concepto" required placeholder="Ej: Sueldo Cande / Alquiler">
+            </div>
+            <div class="form-group">
+                <label>Monto ($)</label>
+                <input type="number" step="0.01" id="gasto_monto" required placeholder="10000">
+            </div>
+            <button type="submit" class="btn-primary" style="width: 100%; margin-top: 10px;">Cargar Gasto</button>
+        </form>
+    </div>
+
+    <!-- Resumen Financiero con Filtros de Fecha -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; margin-bottom: 10px;">
+            <h3 style="margin: 0;">Resumen - Sede <span id="nombre-sucursal-balance" style="color: #2980b9;">Tunuyán</span></h3>
+            <!-- Botonera de Filtro de Fechas -->
+            <div class="filtros-fecha" style="margin: 0;">
+                <button class="btn-filter active" id="btn-filtro-hoy" onclick="filtrarPeriodo('hoy', this)">Hoy</button>
+                <button class="btn-filter" onclick="filtrarPeriodo('semana', this)">Esta Semana</button>
+                <button class="btn-filter" onclick="filtrarPeriodo('mes', this)">Este Mes</button>
+                <button class="btn-filter" onclick="filtrarPeriodo('todo', this)">Ver Todos</button>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px; margin-top: 15px;">
+            <div style="background: #e8f8f5; padding: 15px; border-radius: 8px; border-left: 4px solid #27ae60;">
+                <h4 style="margin: 0; font-size: 13px; color: #555;">(+) Ingreso Bruto</h4>
+                <p id="ingreso-bruto" style="font-size: 22px; font-weight: bold; color: #27ae60; margin: 5px 0 0 0;">$0</p>
+            </div>
+            <div style="background: #fef9e7; padding: 15px; border-radius: 8px; border-left: 4px solid #f39c12;">
+                <h4 style="margin: 0; font-size: 13px; color: #555;">(-) Costos Insumos</h4>
+                <p id="costos-directos" style="font-size: 22px; font-weight: bold; color: #f39c12; margin: 5px 0 0 0;">$0</p>
+            </div>
+            <div style="background: #fadbd8; padding: 15px; border-radius: 8px; border-left: 4px solid #e74c3c;">
+                <h4 style="margin: 0; font-size: 13px; color: #555;">(-) Gastos y Sueldos</h4>
+                <p id="gastos-operativos" style="font-size: 22px; font-weight: bold; color: #e74c3c; margin: 5px 0 0 0;">$0</p>
+            </div>
+            <div style="background: #ebf5fb; padding: 15px; border-radius: 8px; border-left: 4px solid #2980b9;">
+                <h4 style="margin: 0; font-size: 13px; color: #555;">(=) Ganancia Neta Real</h4>
+                <p id="ganancia-neta" style="font-size: 22px; font-weight: bold; color: #2980b9; margin: 5px 0 0 0;">$0</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Tablas de Desglose Detallado -->
+<div class="grid-container" style="grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 25px;">
+    <!-- Tabla Detalle de Turnos Computados -->
+    <div class="card">
+        <h3>Detalle de Servicios Realizados</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Fecha / Hora</th>
+                    <th>Tratamiento</th>
+                    <th>Costo Insumo</th>
+                    <th>Ingreso</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-detalle-turnos">
+                <tr><td colspan="4">Cargando servicios...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Tabla Detalle de Gastos y Sueldos -->
+    <div class="card">
+        <h3>Detalle de Gastos y Sueldos</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Fecha</th>
+                    <th>Concepto</th>
+                    <th>Monto</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-detalle-gastos">
+                <tr><td colspan="3">Cargando gastos...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let datosOriginalesBalance = null;
+    let filtroActual = 'hoy';
+
+    document.addEventListener("DOMContentLoaded", () => {
+        cargarBalance();
+    });
+
+    async function cargarBalance() {
+        try {
+            document.getElementById('nombre-sucursal-balance').innerText = sucursalActualId === 1 ? 'Tunuyán' : 'Tupungato';
+            const res = await fetch(`/balance/${sucursalActualId}`);
+            if (res.ok) {
+                datosOriginalesBalance = await res.json();
+                aplicarFiltroYRenderizar();
+            }
+        } catch (e) {
+            console.error("Error al cargar balance:", e);
+        }
+    }
+
+    function filtrarPeriodo(periodo, btn) {
+        document.querySelectorAll('.btn-filter').forEach(b => b.classList.remove('active'));
+        if (btn) btn.classList.add('active');
+        filtroActual = periodo;
+        aplicarFiltroYRenderizar();
+    }
+
+    function aplicarFiltroYRenderizar() {
+        if (!datosOriginalesBalance) return;
+
+        const ahora = new Date();
+        const hoyStr = ahora.toISOString().split('T')[0];
+
+        // 1. Filtrar Turnos
+        let turnosFiltrados = (datosOriginalesBalance.detalle_turnos || []).filter(t => {
+            const fechaT = new Date(t.fecha_hora);
+            const fechaTStr = t.fecha_hora.split('T')[0];
+
+            if (filtroActual === 'hoy') {
+                return fechaTStr === hoyStr;
+            } else if (filtroActual === 'semana') {
+                const primerDiaSemana = new Date(ahora);
+                const diaSemana = ahora.getDay() === 0 ? 7 : ahora.getDay();
+                primerDiaSemana.setDate(ahora.getDate() - diaSemana + 1);
+                primerDiaSemana.setHours(0,0,0,0);
+                return fechaT >= primerDiaSemana;
+            } else if (filtroActual === 'mes') {
+                return fechaT.getMonth() === ahora.getMonth() && fechaT.getFullYear() === ahora.getFullYear();
+            }
+            return true; // 'todo'
+        });
+
+        // 2. Filtrar Gastos
+        let gastosFiltrados = (datosOriginalesBalance.detalle_gastos || []).filter(g => {
+            const fechaG = new Date(g.fecha);
+            const fechaGStr = g.fecha.split('T')[0];
+
+            if (filtroActual === 'hoy') {
+                return fechaGStr === hoyStr;
+            } else if (filtroActual === 'semana') {
+                const primerDiaSemana = new Date(ahora);
+                const diaSemana = ahora.getDay() === 0 ? 7 : ahora.getDay();
+                primerDiaSemana.setDate(ahora.getDate() - diaSemana + 1);
+                primerDiaSemana.setHours(0,0,0,0);
+                return fechaG >= primerDiaSemana;
+            } else if (filtroActual === 'mes') {
+                return fechaG.getMonth() === ahora.getMonth() && fechaG.getFullYear() === ahora.getFullYear();
+            }
+            return true; // 'todo'
+        });
+
+        // 3. Recalcular Totales
+        const ingresoBruto = turnosFiltrados.reduce((sum, t) => sum + (t.precio || 0), 0);
+        const costosDirectos = turnosFiltrados.reduce((sum, t) => sum + (t.costo || 0), 0);
+        const gastosOperativos = gastosFiltrados.reduce((sum, g) => sum + (g.monto || 0), 0);
+        const gananciaNeta = (ingresoBruto - costosDirectos) - gastosOperativos;
+
+        // 4. Renderizar Métricas
+        document.getElementById('ingreso-bruto').innerText = `$${ingresoBruto.toLocaleString('es-AR')}`;
+        document.getElementById('costos-directos').innerText = `$${costosDirectos.toLocaleString('es-AR')}`;
+        document.getElementById('gastos-operativos').innerText = `$${gastosOperativos.toLocaleString('es-AR')}`;
+        document.getElementById('ganancia-neta').innerText = `$${gananciaNeta.toLocaleString('es-AR')}`;
+
+        // 5. Renderizar Tabla Turnos
+        const tbodyTurnos = document.getElementById('tabla-detalle-turnos');
+        if (turnosFiltrados.length > 0) {
+            tbodyTurnos.innerHTML = turnosFiltrados.map(t => {
+                const f = new Date(t.fecha_hora);
+                const fechaFormatted = f.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                const horaFormatted = f.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+                return `
+                    <tr>
+                        <td><b>${fechaFormatted}</b> - ${horaFormatted} hs</td>
+                        <td>${t.detalles_servicio}</td>
+                        <td style="color:#e67e22;">$${(t.costo || 0).toLocaleString('es-AR')}</td>
+                        <td style="color:#27ae60; font-weight:bold;">$${(t.precio || 0).toLocaleString('es-AR')}</td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbodyTurnos.innerHTML = '<tr><td colspan="4">No hay servicios computados para este período.</td></tr>';
+        }
+
+        // 6. Renderizar Tabla Gastos
+        const tbodyGastos = document.getElementById('tabla-detalle-gastos');
+        if (gastosFiltrados.length > 0) {
+            tbodyGastos.innerHTML = gastosFiltrados.map(g => {
+                const f = new Date(g.fecha);
+                const fechaFormatted = f.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit' });
+                return `
+                    <tr>
+                        <td>${fechaFormatted}</td>
+                        <td><b>${g.concepto}</b></td>
+                        <td style="color:#e74c3c; font-weight:bold;">$${(g.monto || 0).toLocaleString('es-AR')}</td>
+                    </tr>
+                `;
+            }).join('');
+        } else {
+            tbodyGastos.innerHTML = '<tr><td colspan="3">No hay gastos registrados para este período.</td></tr>';
+        }
+    }
+
+    document.getElementById('form-gasto').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const payload = {
+            sucursal_id: sucursalActualId,
+            concepto: document.getElementById('gasto_concepto').value,
+            monto: parseFloat(document.getElementById('gasto_monto').value)
+        };
+
+        try {
+            const res = await fetch('/gastos/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                mostrarAlerta('Gasto registrado correctamente', 'success');
+                document.getElementById('form-gasto').reset();
+                await cargarBalance();
+            } else {
+                const errData = await res.json();
+                mostrarAlerta('Error: ' + (errData.detail || 'No se pudo registrar'), 'error');
+            }
+        } catch (e) {
+            mostrarAlerta('Error de conexión al cargar gasto', 'error');
+        }
+    });
+</script>
+{% endblock %}

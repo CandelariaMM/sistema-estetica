@@ -1,0 +1,215 @@
+{% extends "layout.html" %}
+
+{% block page_title %}Agenda General de Turnos Programados{% endblock %}
+
+{% block content %}
+<div class="grid-container" style="grid-template-columns: 1fr;">
+    <div class="card">
+        <div class="tabla-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h3 style="margin: 0;">Agenda de la Sede <span id="nombre-sucursal-agenda" style="color: #2980b9;"></span></h3>
+            <div class="filtros-fecha" style="display: flex; gap: 10px; align-items: center;">
+                <button class="btn-filter active" id="btn-filtro-hoy" onclick="filtrarTurnos('hoy', this)">Hoy</button>
+                <button class="btn-filter" onclick="filtrarTurnos('semana', this)">Esta Semana</button>
+                <button class="btn-filter" onclick="filtrarTurnos('mes', this)">Este Mes</button>
+                <button class="btn-filter" onclick="filtrarTurnos('todo', this)">Ver Todos</button>
+                <input type="date" id="calendar-filter" class="input-calendar" onchange="filtrarPorFechaCalendario(this.value)" style="padding: 6px; border-radius: 6px; border: 1px solid #ccc;">
+            </div>
+        </div>
+
+        <table style="width: 100%; border-collapse: collapse;">
+            <thead>
+                <tr>
+                    <th>Fecha y Horario</th>
+                    <th>Cliente</th>
+                    <th>Profesional</th>
+                    <th>Tratamiento(s)</th>
+                    <th>Estado Turno</th>
+                    <th>Estado Pago</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-agenda-completa">
+                <tr><td colspan="7">Cargando agenda general...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let clientesMapa = {};
+    let profesionalesMapa = {};
+    let todosLosTurnosAgenda = [];
+    let filtroActualAgenda = 'hoy';
+    let fechaCalendarioSelAgenda = null;
+
+    document.addEventListener("DOMContentLoaded", async () => {
+        document.getElementById('nombre-sucursal-agenda').innerText = sucursalActualId === 1 ? 'Tunuyán' : 'Tupungato';
+        await cargarDatosMaestros();
+        await cargarTurnosAgenda();
+    });
+
+    async function cargarDatosMaestros() {
+        try {
+            // Mapeo ID -> Nombre del Cliente
+            const resC = await fetch('/clientes/');
+            if (resC.ok) {
+                const clientes = await resC.json();
+                clientes.forEach(c => clientesMapa[c.id_cliente] = c.nombre);
+            }
+
+            // Mapeo ID -> Nombre del Profesional
+            const resP = await fetch('/profesionales/');
+            if (resP.ok) {
+                const profesionales = await resP.json();
+                profesionales.forEach(p => profesionalesMapa[p.id_profesional] = p.nombre);
+            }
+        } catch (e) {
+            console.error("Error cargando maestros para la agenda:", e);
+        }
+    }
+
+    async function cargarTurnosAgenda() {
+        try {
+            const res = await fetch(`/turnos/?sucursal_id=${sucursalActualId}`);
+            todosLosTurnosAgenda = res.ok ? await res.json() : [];
+            aplicarFiltrosAgenda();
+        } catch (e) { console.error("Error al cargar turnos:", e); }
+    }
+
+    function aplicarFiltrosAgenda() {
+        let turnosFiltrados = todosLosTurnosAgenda.filter(t => t.sucursal_id === sucursalActualId);
+        const hoy = new Date();
+
+        if (filtroActualAgenda === 'hoy') {
+            const hoyStr = hoy.toISOString().split('T')[0];
+            turnosFiltrados = turnosFiltrados.filter(t => t.fecha_hora.startsWith(hoyStr));
+        } else if (filtroActualAgenda === 'semana') {
+            const primerDiaSemana = new Date(hoy);
+            const diaSemana = hoy.getDay() === 0 ? 7 : hoy.getDay();
+            primerDiaSemana.setDate(hoy.getDate() - diaSemana + 1);
+            primerDiaSemana.setHours(0,0,0,0);
+
+            const ultimoDiaSemana = new Date(primerDiaSemana);
+            ultimoDiaSemana.setDate(primerDiaSemana.getDate() + 6);
+            ultimoDiaSemana.setHours(23,59,59,999);
+
+            turnosFiltrados = turnosFiltrados.filter(t => {
+                const f = new Date(t.fecha_hora);
+                return f >= primerDiaSemana && f <= ultimoDiaSemana;
+            });
+        } else if (filtroActualAgenda === 'mes') {
+            const mesActual = hoy.getMonth();
+            const anioActual = hoy.getFullYear();
+            turnosFiltrados = turnosFiltrados.filter(t => {
+                const f = new Date(t.fecha_hora);
+                return f.getMonth() === mesActual && f.getFullYear() === anioActual;
+            });
+        } else if (filtroActualAgenda === 'calendario' && fechaCalendarioSelAgenda) {
+            turnosFiltrados = turnosFiltrados.filter(t => t.fecha_hora.startsWith(fechaCalendarioSelAgenda));
+        }
+
+        renderizarTablaAgenda(turnosFiltrados);
+    }
+
+    function filtrarTurnos(criterio, btn) {
+        document.querySelectorAll('.btn-filter').forEach(b => b.classList.remove('active'));
+        if(btn) btn.classList.add('active');
+        filtroActualAgenda = criterio;
+        fechaCalendarioSelAgenda = null;
+        document.getElementById('calendar-filter').value = '';
+        aplicarFiltrosAgenda();
+    }
+
+    function filtrarPorFechaCalendario(fecha) {
+        if (!fecha) return;
+        document.querySelectorAll('.btn-filter').forEach(b => b.classList.remove('active'));
+        filtroActualAgenda = 'calendario';
+        fechaCalendarioSelAgenda = fecha;
+        aplicarFiltrosAgenda();
+    }
+
+    function renderizarTablaAgenda(turnos) {
+        const tbody = document.getElementById('tabla-agenda-completa');
+        if (!turnos || turnos.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="7">No hay turnos registrados para esta consulta en la agenda.</td></tr>';
+            return;
+        }
+
+        const ordenados = [...turnos].sort((a, b) => new Date(a.fecha_hora) - new Date(b.fecha_hora));
+
+        tbody.innerHTML = ordenados.map(t => {
+            const fechaObj = new Date(t.fecha_hora);
+            const fechaFormatted = fechaObj.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+            const horaInicioFormatted = fechaObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+            
+            const duracion = t.duracion_minutos || 30;
+            const fechaFinObj = new Date(fechaObj.getTime() + duracion * 60000);
+            const horaFinFormatted = fechaFinObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+
+            const clienteNombre = clientesMapa[t.cliente_id] || `Cliente #${t.cliente_id}`;
+            const profesionalNombre = profesionalesMapa[t.profesional_id] || `Profesional #${t.profesional_id}`;
+
+            const pendiente = t.precio_actual_servicio - t.monto_senia;
+            const estadoPagoTexto = pendiente <= 0 ? 'Pagado Total' : `Debe $${pendiente}`;
+            const estadoTurno = t.estado || 'En espera';
+
+            return `
+                <tr style="${estadoTurno === 'Cancelado' ? 'opacity: 0.5;' : ''}">
+                    <td>
+                        <b>${fechaFormatted}</b><br>
+                        <small style="color:#2980b9; font-weight:bold;">⏱️ ${horaInicioFormatted} a ${horaFinFormatted} hs (${duracion} min)</small>
+                    </td>
+                    <td><b style="color: #3d2c38;">${clienteNombre}</b></td>
+                    <td><small>${profesionalNombre}</small></td>
+                    <td><b>${t.detalles_servicio}</b></td>
+                    <td>
+                        <select class="select-estado ${obtenerClaseEstado(estadoTurno)}" onchange="actualizarEstadoTurno(${t.id_turno}, this.value, this)">
+                            <option value="En espera" ${estadoTurno === 'En espera' ? 'selected' : ''}>En espera</option>
+                            <option value="Confirmado" ${estadoTurno === 'Confirmado' ? 'selected' : ''}>Confirmado</option>
+                            <option value="Cancelado" ${estadoTurno === 'Cancelado' ? 'selected' : ''}>Cancelado</option>
+                        </select>
+                    </td>
+                    <td><span class="badge-pago">${estadoPagoTexto}</span></td>
+                    <td>
+                        <div style="display:flex; gap:5px;">
+                            <a href="/notificaciones/whatsapp/${sucursalActualId}?fecha=${t.fecha_hora.split('T')[0]}&cliente_id=${t.cliente_id}" target="_blank" class="btn-wa">📱 WA</a>
+                            <button class="btn-danger-icon" onclick="eliminarTurno(${t.id_turno})">🗑️</button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join('');
+    }
+
+    function obtenerClaseEstado(estado) {
+        if (estado === 'Confirmado') return 'badge-confirmado';
+        if (estado === 'En espera') return 'badge-espera';
+        if (estado === 'Cancelado') return 'badge-cancelado';
+        return 'badge-neutro';
+    }
+
+    async function actualizarEstadoTurno(idTurno, nuevoEstado, selectElem) {
+        try {
+            const res = await fetch(`/turnos/${idTurno}/estado?estado=${encodeURIComponent(nuevoEstado)}`, { method: 'PUT' });
+            if (res.ok) {
+                mostrarAlerta('Estado actualizado', 'success');
+                if (selectElem) selectElem.className = `select-estado ${obtenerClaseEstado(nuevoEstado)}`;
+                await cargarTurnosAgenda();
+            }
+        } catch (e) { mostrarAlerta('Error al cambiar estado', 'error'); }
+    }
+
+    async function eliminarTurno(idTurno) {
+        if (!confirm('¿Seguro que deseas eliminar este turno?')) return;
+        try {
+            const res = await fetch(`/turnos/${idTurno}`, { method: 'DELETE' });
+            if (res.ok) {
+                mostrarAlerta('Turno eliminado', 'success');
+                await cargarTurnosAgenda();
+            }
+        } catch (e) { mostrarAlerta('Error al eliminar turno', 'error'); }
+    }
+</script>
+{% endblock %}

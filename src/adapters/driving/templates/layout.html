@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <title> SG Estética - Sistema de Gestión</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 0; }
+        body { background-color: #faf6f0; color: #4a4a4a; display: flex; height: 100vh; }
+        
+        .sidebar { width: 250px; background: #3d2c38; color: white; padding: 25px 20px; display: flex; flex-direction: column; }
+        .sidebar h2 { font-size: 20px; margin-bottom: 30px; text-align: center; color: #d4a373; font-weight: 600; }
+        .sidebar nav a { color: #d3c4d1; text-decoration: none; padding: 12px 15px; display: block; border-radius: 8px; margin-bottom: 10px; font-size: 15px; transition: 0.2s; }
+        .sidebar nav a.active, .sidebar nav a:hover { background: #523c4c; color: #ffffff; font-weight: 600; }
+
+        .main-content { flex: 1; padding: 35px; overflow-y: auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; }
+        .header h1 { font-size: 26px; color: #3d2c38; }
+
+        .sucursal-selector { display: flex; align-items: center; gap: 10px; background: #ffffff; border: 1px solid #e2d8d0; padding: 6px 14px; border-radius: 20px; }
+        .sucursal-selector label { font-size: 13px; font-weight: bold; color: #6b5b68; }
+        .sucursal-selector select { border: none; background: transparent; font-weight: bold; color: #d4a373; font-size: 14px; cursor: pointer; outline: none; }
+
+        .grid-container { display: grid; grid-template-columns: 1fr 1.4fr; gap: 30px; }
+        .card { background: white; padding: 28px; border-radius: 12px; box-shadow: 0 10px 25px rgba(0,0,0,0.03); border: 1px solid #f0e6df; }
+        .card h3 { color: #3d2c38; font-size: 18px; margin-bottom: 15px; }
+
+        .form-group { margin-bottom: 16px; }
+        .form-group label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: #6b5b68; }
+        .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #e2d8d0; border-radius: 8px; outline: none; color: #333; background: #fdfbf7; }
+        .form-row { display: flex; gap: 12px; }
+        .form-row .form-group { flex: 1; }
+
+        .btn-primary { width: 100%; background: #b5838d; color: white; border: none; padding: 12px; border-radius: 8px; font-size: 15px; cursor: pointer; font-weight: bold; margin-top: 10px; }
+        .btn-primary:hover { background: #a26b76; }
+        .btn-danger { background: #e74c3c; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; }
+        .btn-edit { background: #f39c12; color: white; border: none; padding: 5px 8px; border-radius: 4px; cursor: pointer; font-size: 12px; margin-right: 4px; }
+
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px 8px; text-align: left; border-bottom: 1px solid #f5ede6; font-size: 13px; }
+        th { background: #faf6f0; color: #6b5b68; font-weight: 600; }
+        .badge-pago { background: #faedcd; color: #8a5a00; padding: 4px 8px; border-radius: 6px; font-size: 11px; font-weight: bold; }
+        .btn-wa { background: #25d366; color: white; border: none; padding: 6px 10px; border-radius: 6px; text-decoration: none; font-size: 11px; font-weight: bold; }
+        
+        .alert { padding: 10px; border-radius: 6px; margin-bottom: 15px; display: none; font-size: 14px; }
+        .alert-success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .alert-error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+
+/* Estilos para el select de estado según opción seleccionada */
+.select-estado {
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+    font-size: 0.85rem;
+    border: none;
+    cursor: pointer;
+    color: white !important;
+    transition: background-color 0.3s ease;
+}
+
+/* Colores para cada estado */
+.badge-espera {
+    background-color: #f39c12 !important; /* Amarillo / Naranja */
+}
+
+.badge-confirmado {
+    background-color: #2ecc71 !important; /* Verde */
+}
+
+.badge-cancelado {
+    background-color: #e74c3c !important; /* Rojo */
+}
+
+/* --- ESTILOS MEJORADOS PARA FILTROS Y TABLA --- */
+
+.tabla-header {
+    margin-bottom: 20px;
+}
+
+/* Contenedor de filtros con formato de píldora/burbuja */
+.filtros-fecha {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 15px;
+    margin-bottom: 20px;
+}
+
+/* Botones en forma de burbuja ovalada */
+.btn-filter {
+    background-color: #f0f0f0;
+    color: #555;
+    border: 1px solid #ddd;
+    padding: 8px 18px;
+    border-radius: 20px; /* Bordes ovalados */
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.btn-filter:hover {
+    background-color: #e2e2e2;
+}
+
+/* Botón activo seleccionado */
+.btn-filter.active {
+    background-color: #d4a373; /* Tono cálido acordes a estética */
+    color: white;
+    border-color: #d4a373;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.15);
+}
+
+/* Selector de fecha en el filtro */
+.input-calendar {
+    padding: 7px 14px;
+    border-radius: 20px;
+    border: 1px solid #ccc;
+    outline: none;
+    font-size: 0.85rem;
+    background-color: #fff;
+}
+
+/* --- ESTILOS DE LA TABLA Y DISTRIBUCIÓN --- */
+
+table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0 8px; /* Espaciado entre filas */
+}
+
+th {
+    padding: 12px 16px;
+    text-align: left;
+    color: #666;
+    font-size: 0.9rem;
+}
+
+td {
+    padding: 14px 16px;
+    background-color: #ffffff;
+    vertical-align: middle;
+}
+
+tr td:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+tr td:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+/* Desplegable de Estado */
+.select-estado {
+    padding: 6px 12px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+}
+
+/* Badges de Pago */
+.badge-pago {
+    background-color: #fff3cd;
+    color: #856404;
+    padding: 6px 12px;
+    border-radius: 12px;
+    font-weight: bold;
+    font-size: 0.85rem;
+    display: inline-block;
+}
+
+/* Botones de Acción alineados horizontalmente */
+.acciones-cell {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.btn-wa {
+    background-color: #25d366;
+    color: white;
+    padding: 6px 12px;
+    border-radius: 6px;
+    text-decoration: none;
+    font-weight: bold;
+    font-size: 0.85rem;
+}
+
+.btn-danger-icon {
+    background-color: #e74c3c;
+    color: white;
+    border: none;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.85rem;
+}
+
+/* Estado neutro por defecto */
+.badge-neutro {
+    background-color: #e0e0e0 !important;
+    color: #4a4a4a !important;
+    border: 1px solid #ccc;
+}
+
+/* Colores cuando el estado está definido */
+.badge-espera {
+    background-color: #f39c12 !important; /* Amarillo / Naranja */
+    color: white !important;
+}
+
+.badge-confirmado {
+    background-color: #2ecc71 !important; /* Verde */
+    color: white !important;
+}
+
+.badge-cancelado {
+    background-color: #e74c3c !important; /* Rojo */
+    color: white !important;
+}
+    </style>
+</head>
+<body>
+
+    <div class="sidebar">
+        <h2> SG ESTÉTICA </h2>
+        <nav>
+            <a href="/turnos-view" class="nav-item {% if active_tab == 'turnos' %}active{% endif %}">➕ Nuevo Turno</a>
+            <a href="/agenda-view" class="nav-item {% if active_tab == 'agenda' %}active{% endif %}">📅 Agenda General</a>
+            <a href="/clientes-view" class="{% if active_tab == 'clientes' %}active{% endif %}">👥 Clientes</a>
+            <a href="/profesionales-view" class="{% if active_tab == 'profesionales' %}active{% endif %}">💼 Profesionales</a>
+            <a href="/servicios-view" class="nav-item {% if active_tab == 'servicios' %}active{% endif %}">💅 Servicios y Precios</a>
+            <a href="/balance-view" class="{% if active_tab == 'balance' %}active{% endif %}">💰 Balance y Caja</a>        
+        </nav>
+    </div>
+
+    <div class="main-content">
+        <div class="header">
+            <h1>{% block page_title %}Panel{% endblock %}</h1>
+            <div class="sucursal-selector">
+                <label>📍 Sede:</label>
+                <select id="select-sucursal" onchange="cambiarSucursalGlobal()">
+                    <option value="1" selected>Tunuyán</option>
+                    <option value="2">Tupungato</option>
+                </select>
+            </div>
+        </div>
+
+        <div id="mensaje-alerta" class="alert"></div>
+
+        <!-- AQUÍ SE INYECTARÁ CADA VISTA -->
+        {% block content %}{% endblock %}
+    </div>
+
+    <script>
+        let sucursalActualId = parseInt(localStorage.getItem('sucursal_activa')) || 1;
+
+        document.addEventListener("DOMContentLoaded", () => {
+            document.getElementById("select-sucursal").value = sucursalActualId;
+        });
+
+        function cambiarSucursalGlobal() {
+            sucursalActualId = parseInt(document.getElementById("select-sucursal").value);
+            localStorage.setItem('sucursal_activa', sucursalActualId);
+            location.reload();
+        }
+
+        function mostrarAlerta(msj, tipo) {
+            const alerta = document.getElementById('mensaje-alerta');
+            alerta.className = `alert alert-${tipo}`;
+            alerta.innerText = msj;
+            alerta.style.display = 'block';
+            setTimeout(() => { alerta.style.display = 'none'; }, 3000);
+        }
+    </script>
+    {% block scripts %}{% endblock %}
+</body>
+</html>

@@ -1,0 +1,412 @@
+{% extends "layout.html" %}
+
+{% block page_title %}Agendar Turno y Consultar Disponibilidad{% endblock %}
+
+{% block content %}
+<style>
+    .grid-turnos-layout {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        align-items: start;
+    }
+    .badge-horario-sugerido {
+        background: #f4eff2;
+        border: 1px solid #3d2c38;
+        border-radius: 8px;
+        padding: 12px;
+        margin-bottom: 10px;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        transition: all 0.2s ease;
+    }
+    .badge-horario-sugerido:hover {
+        background: #e8dedf;
+        transform: translateY(-2px);
+    }
+    .tabs-disp {
+        display: flex;
+        gap: 10px;
+        margin-bottom: 15px;
+    }
+    .tab-disp-btn {
+        flex: 1;
+        padding: 8px;
+        border: 1px solid #3d2c38;
+        background: #fff;
+        border-radius: 6px;
+        cursor: pointer;
+        font-weight: bold;
+    }
+    .tab-disp-btn.active {
+        background: #3d2c38;
+        color: #fff;
+    }
+</style>
+
+<div class="grid-turnos-layout">
+    <!-- COLUMNA IZQUIERDA: FORMULARIO DE AGENDAMIENTO DE TURNO -->
+    <div class="card">
+        <h3>📝 Agendar Nuevo Turno</h3>
+        <form id="form-turno">
+            <div class="form-group">
+                <label>Cliente (Buscar por nombre, teléfono o email)</label>
+                <input type="text" id="input_cliente_search" list="list_clientes" placeholder="Tipeá para buscar clienta..." required>
+                <datalist id="list_clientes"></datalist>
+                <input type="hidden" id="cliente_id_hidden">
+            </div>
+
+            <div class="form-group">
+                <label>Profesional Asignado</label>
+                <input type="text" id="input_profesional_search" list="list_profesionales" placeholder="Tipeá para buscar profesional..." required>
+                <datalist id="list_profesionales"></datalist>
+                <input type="hidden" id="profesional_id_hidden">
+            </div>
+
+            <div class="form-group">
+                <label>Servicio(s) / Tratamiento(s)</label>
+                <div id="contenedor-servicios-dinamicos">
+                    <div class="item-servicio-row" style="display: flex; gap: 8px; margin-bottom: 8px;">
+                        <input type="text" class="input-servicio-search" list="list_servicios" placeholder="Seleccionar servicio..." required style="flex:1;" onchange="recalcularTotalesFormulario()">
+                    </div>
+                </div>
+                <datalist id="list_servicios"></datalist>
+                <button type="button" class="btn-secondary" onclick="agregarCampoServicio()" style="padding: 4px 10px; font-size: 12px;">+ Agregar otro servicio</button>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                    <label>Fecha y Hora Inicio</label>
+                    <input type="datetime-local" id="fecha_hora" required>
+                </div>
+                <div class="form-group">
+                    <label>Duración Total (Min)</label>
+                    <input type="number" id="duracion_total_minutos" value="30" min="15" required readonly style="background: #f4eff2;">
+                </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+                <div class="form-group">
+                    <label>Precio Total ($)</label>
+                    <input type="number" id="precio_actual_servicio" required>
+                </div>
+                <div class="form-group">
+                    <label>Seña ($) (Opcional)</label>
+                    <input type="number" id="monto_senia" value="0">
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label>Método de Pago</label>
+                <select id="metodo_pago">
+                    <option value="A confirmar al asistir">A confirmar al asistir</option>
+                    <option value="Efectivo">Efectivo</option>
+                    <option value="Transferencia">Transferencia</option>
+                    <option value="MercadoPago">MercadoPago</option>
+                </select>
+            </div>
+
+            <button type="submit" class="btn-primary" style="width: 100%; margin-top: 10px;">Agendar Turno</button>
+        </form>
+    </div>
+
+    <!-- COLUMNA DERECHA: BUSCADOR DE DISPONIBILIDAD HORARIA -->
+    <div class="card">
+        <h3>🔎 Consultar Disponibilidad de Horarios</h3>
+        <p style="font-size: 13px; color: #666; margin-bottom: 15px;">
+            Buscá huecos libres desde la hora actual (08:00 a 22:00 hs) y tocá "Reservar" para autocompletar.
+        </p>
+
+        <div class="tabs-disp">
+            <button class="tab-disp-btn active" id="btn-tab-servicio" onclick="cambiarModoDisp('servicio')">Por Tratamiento</button>
+            <button class="tab-disp-btn" id="btn-tab-minutos" onclick="cambiarModoDisp('minutos')">Por Minutos</button>
+        </div>
+
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px;">
+            <div class="form-group">
+                <label>Fecha de Consulta</label>
+                <input type="date" id="disp_fecha" onchange="buscarHorariosDisponibles()">
+            </div>
+            <!-- Punto 3: Filtro Opcional de Profesional -->
+            <div class="form-group">
+                <label>Profesional (Opcional)</label>
+                <select id="disp_profesional_select" onchange="buscarHorariosDisponibles()">
+                    <option value="">Cualquier profesional</option>
+                </select>
+            </div>
+        </div>
+
+        <!-- MODO A: POR TRATAMIENTO -->
+        <div id="panel-modo-servicio">
+            <div class="form-group">
+                <label>Seleccionar Servicio</label>
+                <select id="disp_servicio_select" onchange="buscarHorariosDisponibles()"></select>
+            </div>
+        </div>
+
+        <!-- MODO B: POR MINUTOS -->
+        <div id="panel-modo-minutos" style="display: none;">
+            <div class="form-group">
+                <label>Duración Necesaria (Minutos)</label>
+                <input type="number" id="disp_minutos_input" value="60" min="15" step="15" onchange="buscarHorariosDisponibles()">
+            </div>
+        </div>
+
+        <h4 style="margin-top: 15px; font-size: 15px; color: #3d2c38;">Horarios Libres Encontrados:</h4>
+        <div id="contenedor-sugerencias-disp" style="max-height: 380px; overflow-y: auto; padding-right: 5px; margin-top: 10px;">
+            <p style="color: #777; font-size: 13px;">Seleccioná una fecha para ver las opciones disponibles.</p>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let clientesGlobal = [];
+    let profesionalesGlobal = [];
+    let serviciosGlobal = [];
+    let modoDisponibilidad = 'servicio';
+
+    document.addEventListener("DOMContentLoaded", async () => {
+        document.getElementById('disp_fecha').value = new Date().toISOString().split('T')[0];
+        await cargarDatosMaestros();
+    });
+
+    async function cargarDatosMaestros() {
+        try {
+            const [resC, resP, resS] = await Promise.all([
+                fetch('/clientes/'),
+                fetch('/profesionales/'),
+                fetch('/servicios/')
+            ]);
+
+            clientesGlobal = resC.ok ? await resC.json() : [];
+            profesionalesGlobal = resP.ok ? await resP.json() : [];
+            serviciosGlobal = resS.ok ? await resS.json() : [];
+
+            poblarDatalists();
+            poblarSelectsDisp();
+            await buscarHorariosDisponibles();
+        } catch (e) {
+            console.error("Error al cargar maestros:", e);
+        }
+    }
+
+    function poblarDatalists() {
+        const dlC = document.getElementById('list_clientes');
+        dlC.innerHTML = clientesGlobal.map(c => `<option value="${c.nombre} - ${c.telefono}"></option>`).join('');
+
+        const dlP = document.getElementById('list_profesionales');
+        const profsSuc = profesionalesGlobal.filter(p => p.sucursal_id === sucursalActualId || !p.sucursal_id);
+        dlP.innerHTML = profsSuc.map(p => `<option value="${p.nombre} (${p.especialidad})"></option>`).join('');
+
+        const dlS = document.getElementById('list_servicios');
+        dlS.innerHTML = serviciosGlobal.map(s => `<option value="${s.nombre} - $${s.precio_base} (⏱️ ${s.duracion_base_minutos || 30} min)"></option>`).join('');
+    }
+
+    function poblarSelectsDisp() {
+        const selS = document.getElementById('disp_servicio_select');
+        selS.innerHTML = serviciosGlobal.map(s => `
+            <option value="${s.id_servicio}" data-duracion="${s.duracion_base_minutos || 30}" data-precio="${s.precio_base}" data-nombre="${s.nombre}">
+                ${s.nombre} ($${s.precio_base} - ${s.duracion_base_minutos || 30} min)
+            </option>
+        `).join('');
+
+        const selP = document.getElementById('disp_profesional_select');
+        const profsSuc = profesionalesGlobal.filter(p => p.sucursal_id === sucursalActualId || !p.sucursal_id);
+        selP.innerHTML = '<option value="">Cualquier profesional</option>' + 
+            profsSuc.map(p => `<option value="${p.id_profesional}">${p.nombre}</option>`).join('');
+    }
+
+    function cambiarModoDisp(modo) {
+        modoDisponibilidad = modo;
+        document.getElementById('btn-tab-servicio').classList.toggle('active', modo === 'servicio');
+        document.getElementById('btn-tab-minutos').classList.toggle('active', modo === 'minutos');
+        document.getElementById('panel-modo-servicio').style.display = modo === 'servicio' ? 'block' : 'none';
+        document.getElementById('panel-modo-minutos').style.display = modo === 'minutos' ? 'block' : 'none';
+        buscarHorariosDisponibles();
+    }
+
+    async function buscarHorariosDisponibles() {
+        const fecha = document.getElementById('disp_fecha').value;
+        if (!fecha) return;
+
+        let duracion = 30;
+        let servicioId = null;
+        const profId = document.getElementById('disp_profesional_select').value;
+
+        if (modoDisponibilidad === 'servicio') {
+            const sel = document.getElementById('disp_servicio_select');
+            if (sel.options[sel.selectedIndex]) {
+                duracion = parseInt(sel.options[sel.selectedIndex].getAttribute('data-duracion')) || 30;
+                servicioId = sel.value;
+            }
+        } else {
+            duracion = parseInt(document.getElementById('disp_minutos_input').value) || 30;
+        }
+
+        let url = `/disponibilidad/?sucursal_id=${sucursalActualId}&fecha=${fecha}&duracion_minutos=${duracion}`;
+        if (servicioId) url += `&servicio_id=${servicioId}`;
+        if (profId) url += `&profesional_id=${profId}`;
+        
+        try {
+            const res = await fetch(url);
+            const sug = res.ok ? await res.json() : [];
+            renderizarSugerencias(sug);
+        } catch (e) {
+            console.error("Error al buscar disponibilidad:", e);
+        }
+    }
+
+    function renderizarSugerencias(sugerencias) {
+        const cont = document.getElementById('contenedor-sugerencias-disp');
+        if (!sugerencias || sugerencias.length === 0) {
+            cont.innerHTML = '<p style="color:#c0392b; font-size:13px;">❌ No hay bloques libres disponibles para esta consulta.</p>';
+            return;
+        }
+
+        cont.innerHTML = sugerencias.map(s => `
+            <div class="badge-horario-sugerido">
+                <div>
+                    <b style="color:#27ae60; font-size:15px;">⏱️ ${s.hora_inicio} a ${s.hora_fin} hs</b>
+                    <br><small style="color:#555;">👤 Profesional: ${s.profesional_nombre}</small>
+                </div>
+                <button type="button" class="btn-primary" style="padding: 5px 12px; font-size: 12px;" 
+                        onclick="seleccionarBloque('${s.fecha_hora_iso}', ${s.profesional_id}, '${s.profesional_nombre}', ${s.duracion_minutos})">
+                    Reservar ➔
+                </button>
+            </div>
+        `).join('');
+    }
+
+    function seleccionarBloque(fechaIso, profId, profNombre, duracionMin) {
+        document.getElementById('fecha_hora').value = fechaIso;
+        document.getElementById('duracion_total_minutos').value = duracionMin;
+
+        // Autocompletar profesional
+        const matchProf = profesionalesGlobal.find(p => p.id_profesional === profId);
+        if (matchProf) {
+            document.getElementById('input_profesional_search').value = `${matchProf.nombre} (${matchProf.especialidad})`;
+            document.getElementById('profesional_id_hidden').value = matchProf.id_profesional;
+        }
+
+        // Punto 2: Autocompletar Servicio y Precio si fue búsqueda por Tratamiento
+        if (modoDisponibilidad === 'servicio') {
+            const selS = document.getElementById('disp_servicio_select');
+            if (selS.options[selS.selectedIndex]) {
+                const opt = selS.options[selS.selectedIndex];
+                const nomServ = opt.getAttribute('data-nombre');
+                const precServ = opt.getAttribute('data-precio');
+                const durServ = opt.getAttribute('data-duracion');
+
+                const primerInput = document.querySelector('.input-servicio-search');
+                if (primerInput) {
+                    primerInput.value = `${nomServ} - $${precServ} (⏱️ ${durServ} min)`;
+                }
+                document.getElementById('precio_actual_servicio').value = precServ;
+            }
+        }
+
+        mostrarAlerta(`Horario ${fechaIso.split('T')[1]} hs seleccionado con ${profNombre}`, 'info');
+    }
+
+    function recalcularTotalesFormulario() {
+        const inputs = document.querySelectorAll('.input-servicio-search');
+        let precioTotal = 0;
+        let duracionTotal = 0;
+
+        inputs.forEach(inp => {
+            const val = inp.value;
+            const match = serviciosGlobal.find(s => `${s.nombre} - $${s.precio_base} (⏱️ ${s.duracion_base_minutos || 30} min)` === val);
+            if (match) {
+                precioTotal += match.precio_base || 0;
+                duracionTotal += match.duracion_base_minutos || 30;
+            }
+        });
+
+        if (precioTotal > 0) document.getElementById('precio_actual_servicio').value = precioTotal;
+        if (duracionTotal > 0) document.getElementById('duracion_total_minutos').value = duracionTotal;
+    }
+
+    document.getElementById('input_cliente_search').addEventListener('input', (e) => {
+        const match = clientesGlobal.find(c => `${c.nombre} - ${c.telefono}` === e.target.value);
+        if (match) document.getElementById('cliente_id_hidden').value = match.id_cliente;
+    });
+
+    document.getElementById('input_profesional_search').addEventListener('input', (e) => {
+        const match = profesionalesGlobal.find(p => `${p.nombre} (${p.especialidad})` === e.target.value);
+        if (match) document.getElementById('profesional_id_hidden').value = match.id_profesional;
+    });
+
+    document.getElementById('form-turno').addEventListener('submit', async (e) => {
+        e.preventDefault();
+
+        const clienteId = document.getElementById('cliente_id_hidden').value || 1;
+        const profesionalId = document.getElementById('profesional_id_hidden').value || 1;
+
+        const inputsServicios = document.querySelectorAll('.input-servicio-search');
+        const nombresServicios = [];
+        let primerServicioId = 1;
+        let costoTotalInsumos = 0;
+
+        inputsServicios.forEach((inp, idx) => {
+            const val = inp.value;
+            const match = serviciosGlobal.find(s => `${s.nombre} - $${s.precio_base} (⏱️ ${s.duracion_base_minutos || 30} min)` === val);
+            if (match) {
+                nombresServicios.push(match.nombre);
+                costoTotalInsumos += (match.costo_base || 0);
+                if (idx === 0) primerServicioId = match.id_servicio;
+            } else if (val.trim()) {
+                nombresServicios.push(val.trim());
+            }
+        });
+
+        const payload = {
+            id_turno: 0,
+            sucursal_id: sucursalActualId,
+            cliente_id: parseInt(clienteId),
+            profesional_id: parseInt(profesionalId),
+            servicio_id: parseInt(primerServicioId),
+            fecha_hora: document.getElementById('fecha_hora').value,
+            detalles_servicio: nombresServicios.join(' + ') || "Tratamiento Estético",
+            precio_actual_servicio: parseFloat(document.getElementById('precio_actual_servicio').value || 0),
+            costo_actual_servicio: costoTotalInsumos,
+            monto_senia: parseFloat(document.getElementById('monto_senia').value || 0),
+            metodo_pago: document.getElementById('metodo_pago').value,
+            estado: "En espera"
+        };
+
+        try {
+            const res = await fetch('/turnos/', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+
+            if (res.ok) {
+                mostrarAlerta('¡Turno agendado exitosamente!', 'success');
+                document.getElementById('form-turno').reset();
+                setTimeout(() => { window.location.href = '/agenda-view'; }, 1000);
+            } else {
+                const errData = await res.json();
+                mostrarAlerta('Error: ' + (errData.detail || 'No se pudo agendar'), 'error');
+            }
+        } catch (e) {
+            mostrarAlerta('Error de conexión con el servidor', 'error');
+        }
+    });
+
+    function agregarCampoServicio() {
+        const cont = document.getElementById('contenedor-servicios-dinamicos');
+        const div = document.createElement('div');
+        div.className = 'item-servicio-row';
+        div.style.cssText = 'display: flex; gap: 8px; margin-bottom: 8px;';
+        div.innerHTML = `
+            <input type="text" class="input-servicio-search" list="list_servicios" placeholder="Seleccionar otro servicio..." style="flex:1;" onchange="recalcularTotalesFormulario()">
+            <button type="button" class="btn-danger-icon" onclick="this.parentElement.remove(); recalcularTotalesFormulario();">🗑️</button>
+        `;
+        cont.appendChild(div);
+    }
+</script>
+{% endblock %}

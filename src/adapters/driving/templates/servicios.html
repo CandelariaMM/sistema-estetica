@@ -1,0 +1,158 @@
+{% extends "layout.html" %}
+
+{% block page_title %}Gestión de Servicios y Tratamientos{% endblock %}
+
+{% block content %}
+<div class="grid-container">
+    <!-- Formulario para Alta/Edición de Servicios -->
+    <div class="card">
+        <h3 id="form-titulo">Registrar Nuevo Servicio</h3>
+        <form id="form-servicio">
+            <input type="hidden" id="servicio_id" value="0">
+            <div class="form-group">
+                <label>Nombre del Tratamiento / Servicio</label>
+                <input type="text" id="servicio_nombre" required placeholder="Ej: Hollywood Peel / Promo 25">
+            </div>
+            <div class="form-group">
+                <label>Precio Base ($)</label>
+                <input type="number" step="0.01" id="servicio_precio" required placeholder="25000">
+            </div>
+            <div class="form-group">
+                <label>Costo Insumo ($)</label>
+                <input type="number" step="0.01" id="servicio_costo" required placeholder="5000">
+            </div>
+            <div class="form-group">
+                <label>Duración Estimada (Minutos)</label>
+                <input type="number" id="servicio_duracion" required placeholder="30" value="30">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button type="submit" class="btn-primary" id="btn-guardar-servicio">Guardar Servicio</button>
+                <button type="button" class="btn-secondary" id="btn-cancelar-edicion" style="display:none;" onclick="resetearFormulario()">Cancelar</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Lista de Servicios Registrados -->
+    <div class="card">
+        <h3>Catálogo de Servicios y Precios</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>Tratamiento</th>
+                    <th>Precio</th>
+                    <th>Costo Insumo</th>
+                    <th>Duración</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-servicios">
+                <tr><td colspan="5">Cargando catálogo de servicios...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    document.addEventListener("DOMContentLoaded", () => {
+        cargarServicios();
+    });
+
+    async function cargarServicios() {
+        try {
+            const res = await fetch('/servicios/');
+            if (res.ok) {
+                const servicios = await res.json();
+                renderizarServicios(servicios);
+            }
+        } catch (e) {
+            console.error("Error al cargar servicios:", e);
+        }
+    }
+
+    function renderizarServicios(servicios) {
+        const tbody = document.getElementById('tabla-servicios');
+        if (!servicios || servicios.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="5">No hay servicios registrados aún.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = servicios.map(s => `
+            <tr>
+                <td><b>${s.nombre}</b></td>
+                <td style="color:#27ae60; font-weight:bold;">$${s.precio_base.toLocaleString('es-AR')}</td>
+                <td style="color:#e67e22;">$${s.costo_base.toLocaleString('es-AR')}</td>
+                <td>⏱️ ${s.duracion_base_minutos || 30} min</td>
+                <td>
+                    <button class="btn-secondary" onclick='editarServicio(${JSON.stringify(s)})'>Editar</button>
+                    <button class="btn-danger" onclick="eliminarServicio(${s.id_servicio})">Eliminar</button>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    document.getElementById('form-servicio').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const idServicio = parseInt(document.getElementById('servicio_id').value);
+        const payload = {
+            nombre: document.getElementById('servicio_nombre').value,
+            precio_base: parseFloat(document.getElementById('servicio_precio').value),
+            costo_base: parseFloat(document.getElementById('servicio_costo').value),
+            duracion_base_minutos: parseInt(document.getElementById('servicio_duracion').value) || 30
+        };
+
+        const url = idServicio === 0 ? '/servicios/' : `/servicios/${idServicio}`;
+        const method = idServicio === 0 ? 'POST' : 'PUT';
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                mostrarAlerta(idServicio === 0 ? 'Servicio guardado exitosamente' : 'Servicio actualizado', 'success');
+                resetearFormulario();
+                await cargarServicios();
+            }
+        } catch (err) {
+            mostrarAlerta('Error al guardar servicio', 'error');
+        }
+    });
+
+    function editarServicio(s) {
+        document.getElementById('servicio_id').value = s.id_servicio;
+        document.getElementById('servicio_nombre').value = s.nombre;
+        document.getElementById('servicio_precio').value = s.precio_base;
+        document.getElementById('servicio_costo').value = s.costo_base;
+        document.getElementById('servicio_duracion').value = s.duracion_base_minutos || 30;
+
+        document.getElementById('form-titulo').innerText = 'Editar Servicio';
+        document.getElementById('btn-guardar-servicio').innerText = 'Actualizar Servicio';
+        document.getElementById('btn-cancelar-edicion').style.display = 'inline-block';
+    }
+
+    function resetearFormulario() {
+        document.getElementById('servicio_id').value = '0';
+        document.getElementById('form-servicio').reset();
+        document.getElementById('servicio_duracion').value = '30';
+        document.getElementById('form-titulo').innerText = 'Registrar Nuevo Servicio';
+        document.getElementById('btn-guardar-servicio').innerText = 'Guardar Servicio';
+        document.getElementById('btn-cancelar-edicion').style.display = 'none';
+    }
+
+    async function eliminarServicio(id) {
+        if (!confirm('¿Seguro que deseas eliminar este servicio del catálogo?')) return;
+        try {
+            const res = await fetch(`/servicios/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                mostrarAlerta('Servicio eliminado', 'success');
+                await cargarServicios();
+            }
+        } catch (e) {
+            mostrarAlerta('Error al eliminar servicio', 'error');
+        }
+    }
+</script>
+{% endblock %}

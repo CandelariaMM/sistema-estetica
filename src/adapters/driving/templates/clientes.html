@@ -1,0 +1,243 @@
+{% extends "layout.html" %}
+
+{% block page_title %}Gestión de Clientes e Historial{% endblock %}
+
+{% block content %}
+<div class="grid-container">
+    <!-- Formulario de Cliente -->
+    <div class="card">
+        <h3 id="form-titulo-cliente">Registrar Nuevo Cliente</h3>
+        <form id="form-cliente">
+            <input type="hidden" id="cliente_id" value="0">
+            <div class="form-group">
+                <label>Nombre y Apellido</label>
+                <input type="text" id="cli_nombre" required placeholder="Ej: María Gómez">
+            </div>
+            <div class="form-group">
+                <label>Teléfono (WhatsApp)</label>
+                <input type="text" id="cli_telefono" required placeholder="Ej: 2622123456">
+            </div>
+            <div class="form-group">
+                <label>Email (Opcional)</label>
+                <input type="email" id="cli_email" placeholder="cliente@email.com">
+            </div>
+            <div style="display: flex; gap: 10px; margin-top: 15px;">
+                <button type="submit" class="btn-primary" id="btn-guardar-cli">Guardar Cliente</button>
+                <button type="button" class="btn-secondary" id="btn-cancelar-cli" style="display:none;" onclick="resetearFormulario()">Cancelar</button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Lista de Clientes con Buscador en Tiempo Real -->
+    <div class="card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="margin: 0;">Directorio de Clientes</h3>
+            <input type="text" id="input-buscar-cliente" oninput="filtrarTablaClientes()" placeholder="🔍 Buscar por nombre, teléfono o email..." style="width: 280px; padding: 8px 12px; border-radius: 6px; border: 1px solid #ccc; font-size: 14px;">
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Nombre</th>
+                    <th>Teléfono</th>
+                    <th>Email</th>
+                    <th>Acciones</th>
+                </tr>
+            </thead>
+            <tbody id="tabla-clientes">
+                <tr><td colspan="4">Cargando directorio de clientes...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<!-- Modal / Vista para Historial de Tratamientos del Cliente -->
+<div class="card" id="card-historial" style="margin-top: 25px; display: none;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3>Historial de Tratamientos - <span id="nombre-cliente-historial" style="color:#2980b9;"></span></h3>
+        <button class="btn-secondary" onclick="cerrarHistorial()">✕ Cerrar Historial</button>
+    </div>
+    <table>
+        <thead>
+            <tr>
+                <th>Fecha y Hora</th>
+                <th>Sucursal</th>
+                <th>Tratamiento / Servicio</th>
+                <th>Medio de Pago</th>
+                <th>Monto Abonado</th>
+                <th>Estado</th>
+            </tr>
+        </thead>
+        <tbody id="tabla-historial-cliente">
+            <tr><td colspan="6">Cargando historial...</td></tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+    let clientesGlobales = [];
+
+    document.addEventListener("DOMContentLoaded", () => {
+        cargarClientes();
+    });
+
+    async function cargarClientes() {
+        try {
+            const res = await fetch('/clientes/');
+            if (res.ok) {
+                clientesGlobales = await res.json();
+                renderizarClientes(clientesGlobales);
+            }
+        } catch (e) { console.error("Error al cargar clientes:", e); }
+    }
+
+    function renderizarClientes(lista) {
+        const tbody = document.getElementById('tabla-clientes');
+        if (!lista || lista.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="4">No se encontraron clientes.</td></tr>';
+            return;
+        }
+
+        tbody.innerHTML = lista.map(c => `
+            <tr>
+                <td><b>${c.nombre}</b></td>
+                <td> ${c.telefono}</td>
+                <td>${c.email || '-'}</td>
+                <td>
+                    <div style="display: flex; gap: 6px; align-items: center;">
+                        <button class="btn-primary" style="font-size: 12px; padding: 6px 10px;" onclick="verHistorialCliente(${c.id_cliente}, '${c.nombre}')">📋 Historial</button>
+                        <button class="btn-secondary" style="font-size: 13px; padding: 6px 10px;" title="Editar cliente" onclick='editarCliente(${JSON.stringify(c)})'>✏️</button>
+                        <button class="btn-danger-icon" style="padding: 6px 10px;" title="Eliminar cliente" onclick="eliminarCliente(${c.id_cliente})">🗑️</button>
+                    </div>
+                </td>
+            </tr>
+        `).join('');
+    }
+
+    function filtrarTablaClientes() {
+        const query = document.getElementById('input-buscar-cliente').value.toLowerCase().trim();
+        if (!query) {
+            renderizarClientes(clientesGlobales);
+            return;
+        }
+
+        const filtrados = clientesGlobales.filter(c => 
+            c.nombre.toLowerCase().includes(query) ||
+            c.telefono.toLowerCase().includes(query) ||
+            (c.email && c.email.toLowerCase().includes(query))
+        );
+
+        renderizarClientes(filtrados);
+    }
+
+    document.getElementById('form-cliente').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const idCli = parseInt(document.getElementById('cliente_id').value);
+        const payload = {
+            nombre: document.getElementById('cli_nombre').value,
+            telefono: document.getElementById('cli_telefono').value,
+            email: document.getElementById('cli_email').value
+        };
+
+        const url = idCli === 0 ? '/clientes/' : `/clientes/${idCli}`;
+        const method = idCli === 0 ? 'POST' : 'PUT';
+
+        try {
+            const res = await fetch(url, {
+                method: method,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            if (res.ok) {
+                mostrarAlerta(idCli === 0 ? 'Cliente registrado correctamente' : 'Cliente actualizado', 'success');
+                resetearFormulario();
+                await cargarClientes();
+                document.getElementById('input-buscar-cliente').value = '';
+            }
+        } catch (e) { mostrarAlerta('Error al guardar cliente', 'error'); }
+    });
+
+    function editarCliente(c) {
+        document.getElementById('cliente_id').value = c.id_cliente;
+        document.getElementById('cli_nombre').value = c.nombre;
+        document.getElementById('cli_telefono').value = c.telefono;
+        document.getElementById('cli_email').value = c.email || '';
+
+        document.getElementById('form-titulo-cliente').innerText = 'Editar Cliente';
+        document.getElementById('btn-guardar-cli').innerText = 'Actualizar Cliente';
+        document.getElementById('btn-cancelar-cli').style.display = 'inline-block';
+    }
+
+    function resetearFormulario() {
+        document.getElementById('cliente_id').value = '0';
+        document.getElementById('form-cliente').reset();
+        document.getElementById('form-titulo-cliente').innerText = 'Registrar Nuevo Cliente';
+        document.getElementById('btn-guardar-cli').innerText = 'Guardar Cliente';
+        document.getElementById('btn-cancelar-cli').style.display = 'none';
+    }
+
+    async function eliminarCliente(id) {
+        if (!confirm('¿Seguro que deseas eliminar este cliente del sistema?')) return;
+        try {
+            const res = await fetch(`/clientes/${id}`, { method: 'DELETE' });
+            if (res.ok) {
+                mostrarAlerta('Cliente eliminado', 'success');
+                await cargarClientes();
+            }
+        } catch (e) { mostrarAlerta('Error al eliminar cliente', 'error'); }
+    }
+
+    async function verHistorialCliente(idCliente, nombreCliente) {
+        document.getElementById('nombre-cliente-historial').innerText = nombreCliente;
+        const cardHistorial = document.getElementById('card-historial');
+        const tbody = document.getElementById('tabla-historial-cliente');
+        cardHistorial.style.display = 'block';
+        cardHistorial.scrollIntoView({ behavior: 'smooth' });
+
+        tbody.innerHTML = '<tr><td colspan="6">Consultando historial de la clienta...</td></tr>';
+
+        try {
+            const resT1 = await fetch('/turnos/?sucursal_id=1');
+            const resT2 = await fetch('/turnos/?sucursal_id=2');
+            
+            const turnos1 = resT1.ok ? await resT1.json() : [];
+            const turnos2 = resT2.ok ? await resT2.json() : [];
+            const todosLosTurnos = [...turnos1, ...turnos2];
+
+            const turnosCliente = todosLosTurnos.filter(t => t.cliente_id === idCliente);
+
+            if (turnosCliente.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6">Esta clienta no posee turnos registrados en el sistema.</td></tr>';
+                return;
+            }
+
+            const ordenados = turnosCliente.sort((a,b) => new Date(b.fecha_hora) - new Date(a.fecha_hora));
+
+            tbody.innerHTML = ordenados.map(t => {
+                const fObj = new Date(t.fecha_hora);
+                const fechaFormatted = fObj.toLocaleDateString('es-AR', { day: '2-digit', month: '2-digit', year: 'numeric' });
+                const horaFormatted = fObj.toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit', hour12: false });
+                const sucursalNombre = t.sucursal_id === 1 ? 'Tunuyán' : 'Tupungato';
+
+                return `
+                    <tr>
+                        <td><b>${fechaFormatted}</b> - ${horaFormatted} hs</td>
+                        <td><small>📍 ${sucursalNombre}</small></td>
+                        <td><b>${t.detalles_servicio}</b></td>
+                        <td>${t.metodo_pago || 'Efectivo'}</td>
+                        <td style="color:#27ae60; font-weight:bold;">$${t.precio_actual_servicio || 0}</td>
+                        <td><span class="badge-pago">${t.estado || 'En espera'}</span></td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (e) {
+            tbody.innerHTML = '<tr><td colspan="6">Error al cargar historial.</td></tr>';
+        }
+    }
+
+    function cerrarHistorial() {
+        document.getElementById('card-historial').style.display = 'none';
+    }
+</script>
+{% endblock %}
